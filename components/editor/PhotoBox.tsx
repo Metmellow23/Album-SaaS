@@ -5,6 +5,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ImageData, PhotoBox as PhotoBoxType, AlbumSize } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+type SnapLine = { type: 'horizontal' | 'vertical'; position: number };
+
 interface PhotoBoxProps {
   box: PhotoBoxType;
   imageData: ImageData;
@@ -12,11 +14,12 @@ interface PhotoBoxProps {
   isPanMode: boolean;
   canvasScale: number;
   albumSize: AlbumSize;
-  allBoxes: PhotoBoxType[];  // ✅ NEW! - For snapping to other boxes
+  allBoxes: PhotoBoxType[];
   onUpdate: (updates: Partial<PhotoBoxType>) => void;
   onImageUpdate: (imageId: string, updates: Partial<ImageData>) => void;
   onActivate: () => void;
   onDelete: () => void;
+  onSnapLines?: (lines: SnapLine[]) => void;
 }
 
 const PhotoBox: React.FC<PhotoBoxProps> = ({
@@ -26,11 +29,12 @@ const PhotoBox: React.FC<PhotoBoxProps> = ({
   isPanMode,
   canvasScale,
   albumSize,
-  allBoxes,  // ✅ NEW!
+  allBoxes,
   onUpdate,
   onImageUpdate,
   onActivate,
   onDelete,
+  onSnapLines,
 }) => {
   const boxRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -88,14 +92,61 @@ const PhotoBox: React.FC<PhotoBoxProps> = ({
         const dx = (moveEvent.clientX - startX) / canvasScale;
         const dy = (moveEvent.clientY - startY) / canvasScale;
 
-        onUpdate({
-          left: startLeft + dx,
-          top: startTop + dy,
+        let newLeft = startLeft + dx;
+        let newTop = startTop + dy;
+
+        // --- X-axis snap reference lines ---
+        const xRefs: number[] = [0, canvasWidth, canvasWidth / 2];
+        allBoxes.forEach((ob) => {
+          if (ob.id === box.id) return;
+          xRefs.push(ob.left, ob.left + ob.width, ob.left + ob.width / 2);
         });
+
+        let bestXDist = SNAP_TOLERANCE;
+        let snapXLine: number | null = null;
+        let snappedLeft = newLeft;
+        xRefs.forEach((ref) => {
+          // left edge → ref
+          let d = Math.abs(newLeft - ref);
+          if (d < bestXDist) { bestXDist = d; snappedLeft = ref; snapXLine = ref; }
+          // center → ref
+          d = Math.abs(newLeft + box.width / 2 - ref);
+          if (d < bestXDist) { bestXDist = d; snappedLeft = ref - box.width / 2; snapXLine = ref; }
+          // right edge → ref
+          d = Math.abs(newLeft + box.width - ref);
+          if (d < bestXDist) { bestXDist = d; snappedLeft = ref - box.width; snapXLine = ref; }
+        });
+
+        // --- Y-axis snap reference lines ---
+        const yRefs: number[] = [0, canvasHeight, canvasHeight / 2];
+        allBoxes.forEach((ob) => {
+          if (ob.id === box.id) return;
+          yRefs.push(ob.top, ob.top + ob.height, ob.top + ob.height / 2);
+        });
+
+        let bestYDist = SNAP_TOLERANCE;
+        let snapYLine: number | null = null;
+        let snappedTop = newTop;
+        yRefs.forEach((ref) => {
+          let d = Math.abs(newTop - ref);
+          if (d < bestYDist) { bestYDist = d; snappedTop = ref; snapYLine = ref; }
+          d = Math.abs(newTop + box.height / 2 - ref);
+          if (d < bestYDist) { bestYDist = d; snappedTop = ref - box.height / 2; snapYLine = ref; }
+          d = Math.abs(newTop + box.height - ref);
+          if (d < bestYDist) { bestYDist = d; snappedTop = ref - box.height; snapYLine = ref; }
+        });
+
+        const activeSnapLines: SnapLine[] = [];
+        if (snapXLine !== null) activeSnapLines.push({ type: 'vertical', position: snapXLine });
+        if (snapYLine !== null) activeSnapLines.push({ type: 'horizontal', position: snapYLine });
+        onSnapLines?.(activeSnapLines);
+
+        onUpdate({ left: snappedLeft, top: snappedTop });
       };
 
       const handleDragEnd = () => {
         setIsDragging(false);
+        onSnapLines?.([]);
         document.removeEventListener('mousemove', handleDragMove);
         document.removeEventListener('mouseup', handleDragEnd);
       };

@@ -18,6 +18,8 @@ interface CanvasProps {
   onBoxDelete: (boxId: string) => void;
 }
 
+type SnapLine = { type: 'horizontal' | 'vertical'; position: number };
+
 const Canvas: React.FC<CanvasProps> = ({
   albumSize,
   boxes,
@@ -33,6 +35,7 @@ const Canvas: React.FC<CanvasProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
 
   const calculateScale = () => {
     if (!wrapperRef.current || !canvasRef.current) return;
@@ -134,14 +137,32 @@ const Canvas: React.FC<CanvasProps> = ({
   isPanMode={isPanMode}
   canvasScale={scale}
   albumSize={albumSize}
-  allBoxes={boxes}  // ✅ ADD THIS!
+  allBoxes={boxes}
   onUpdate={(updates) => handleBoxUpdate(box.id, updates)}
   onImageUpdate={onImageUpdate}
   onActivate={() => onBoxActivate(box.id)}
   onDelete={() => onBoxDelete(box.id)}
+  onSnapLines={setSnapLines}
 />
             );
           })}
+
+          {/* Snap guidelines — shown during drag */}
+          {snapLines.map((line, i) =>
+            line.type === 'vertical' ? (
+              <div
+                key={i}
+                className="absolute top-0 bottom-0 pointer-events-none z-[102]"
+                style={{ left: `${line.position}px`, width: '1px', background: 'rgba(251,146,60,0.85)' }}
+              />
+            ) : (
+              <div
+                key={i}
+                className="absolute left-0 right-0 pointer-events-none z-[102]"
+                style={{ top: `${line.position}px`, height: '1px', background: 'rgba(251,146,60,0.85)' }}
+              />
+            )
+          )}
 
           {!isExporting && (
             <div
