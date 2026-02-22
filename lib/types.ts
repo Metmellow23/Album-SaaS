@@ -115,3 +115,9 @@ export interface PhotoBox {
   opacity: number;
   borderWidth: number;
 }
+
+// 5. SAYFA
+export interface Page {
+  id: string;
+  boxes: PhotoBox[];
+}

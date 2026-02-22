@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Move } from 'lucide-react';
-import { AlbumSize, ImageData, PhotoBox as PhotoBoxType } from '@/lib/types';
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Move, Plus, Trash2 } from 'lucide-react';
+import { AlbumSize, ImageData, Page, PhotoBox as PhotoBoxType } from '@/lib/types';
 import Button from '@/components/ui/Button';
 import LoadingOverlay from '@/components/ui/LoadingOverlay';
 import Sidebar from '@/components/editor/Sidebar';
@@ -14,12 +14,13 @@ export default function EditorPage() {
   const router = useRouter();
   const [selectedSize, setSelectedSize] = useState<AlbumSize | null>(null);
   const [images, setImages] = useState<ImageData[]>([]);
-  const [boxes, setBoxes] = useState<PhotoBoxType[]>([]);
-  const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
+  const [pages, setPages] = useState<Page[]>([{ id: 'page-1', boxes: [] }]);
+  const [activePageId, setActivePageId] = useState<string>('page-1');
   const [activeBoxId, setActiveBoxId] = useState<string | null>(null);
   const [isPanMode, setIsPanMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const storedSize = localStorage.getItem('selectedAlbumSize');
@@ -29,6 +30,12 @@ export default function EditorPage() {
     }
     setSelectedSize(JSON.parse(storedSize));
   }, [router]);
+
+  // Derived values from active page
+  const activePage = pages.find((p) => p.id === activePageId) ?? pages[0];
+  const boxes = activePage.boxes;
+  const selectedImageIds = boxes.map((b) => b.imageId);
+  const activePageIndex = pages.findIndex((p) => p.id === activePageId);
 
   const handleImagesUpload = async (files: FileList) => {
     const fileArray = Array.from(files);
@@ -73,13 +80,17 @@ export default function EditorPage() {
   };
 
   const handleImageClick = (imageId: string) => {
-    const existingBoxIndex = boxes.findIndex((box) => box.imageId === imageId);
+    const existingBox = activePage.boxes.find((box) => box.imageId === imageId);
 
-    if (existingBoxIndex > -1) {
-      const newBoxes = boxes.filter((box) => box.imageId !== imageId);
-      setBoxes(newBoxes);
-      setSelectedImageIds((prev) => prev.filter((id) => id !== imageId));
-      if (activeBoxId === boxes[existingBoxIndex].id) {
+    if (existingBox) {
+      setPages((prev) =>
+        prev.map((p) =>
+          p.id !== activePageId
+            ? p
+            : { ...p, boxes: p.boxes.filter((b) => b.imageId !== imageId) }
+        )
+      );
+      if (activeBoxId === existingBox.id) {
         setActiveBoxId(null);
       }
     } else {
@@ -87,8 +98,11 @@ export default function EditorPage() {
       if (!imageData || !selectedSize) return;
 
       const newBox = createPhotoBox(imageData, selectedSize);
-      setBoxes((prev) => [...prev, newBox]);
-      setSelectedImageIds((prev) => [...prev, imageId]);
+      setPages((prev) =>
+        prev.map((p) =>
+          p.id !== activePageId ? p : { ...p, boxes: [...p.boxes, newBox] }
+        )
+      );
       setActiveBoxId(newBox.id);
     }
   };
@@ -128,12 +142,15 @@ export default function EditorPage() {
   };
 
   const handleBoxUpdate = (boxId: string, updates: Partial<PhotoBoxType>) => {
-    setBoxes((prev) =>
-      prev.map((box) => (box.id === boxId ? { ...box, ...updates } : box))
+    setPages((prev) =>
+      prev.map((p) =>
+        p.id !== activePageId
+          ? p
+          : { ...p, boxes: p.boxes.map((b) => (b.id === boxId ? { ...b, ...updates } : b)) }
+      )
     );
   };
 
-  // YENİ EKLENEN FONKSİYON: Resim verisini (Offset) günceller
   const handleImageUpdate = (imageId: string, updates: Partial<ImageData>) => {
     setImages((prev) =>
       prev.map((img) => (img.id === imageId ? { ...img, ...updates } : img))
@@ -141,23 +158,101 @@ export default function EditorPage() {
   };
 
   const handleBoxDelete = (boxId: string) => {
-    const box = boxes.find((b) => b.id === boxId);
-    if (!box) return;
-
-    setBoxes((prev) => prev.filter((b) => b.id !== boxId));
-    setSelectedImageIds((prev) => prev.filter((id) => id !== box.imageId));
+    setPages((prev) =>
+      prev.map((p) =>
+        p.id !== activePageId
+          ? p
+          : { ...p, boxes: p.boxes.filter((b) => b.id !== boxId) }
+      )
+    );
     if (activeBoxId === boxId) {
       setActiveBoxId(null);
     }
   };
 
   const handleImageDelete = (imageId: string) => {
+    // Remove from ALL pages
+    setPages((prev) =>
+      prev.map((p) => ({ ...p, boxes: p.boxes.filter((b) => b.imageId !== imageId) }))
+    );
     setImages((prev) => prev.filter((img) => img.id !== imageId));
-    setBoxes((prev) => prev.filter((box) => box.imageId !== imageId));
-    setSelectedImageIds((prev) => prev.filter((id) => id !== imageId));
     const activeBox = boxes.find((box) => box.id === activeBoxId);
     if (activeBox && activeBox.imageId === imageId) {
       setActiveBoxId(null);
+    }
+  };
+
+  // Page management
+  const handleAddPage = () => {
+    const newId = `page-${Date.now()}`;
+    setPages((prev) => [...prev, { id: newId, boxes: [] }]);
+    setActivePageId(newId);
+    setActiveBoxId(null);
+  };
+
+  const handleDeletePage = () => {
+    if (pages.length <= 1) return;
+    const idx = pages.findIndex((p) => p.id === activePageId);
+    const newPages = pages.filter((p) => p.id !== activePageId);
+    const newActive = newPages[Math.min(idx, newPages.length - 1)].id;
+    setPages(newPages);
+    setActivePageId(newActive);
+    setActiveBoxId(null);
+  };
+
+  const handleNavigate = (dir: 'prev' | 'next') => {
+    const idx = pages.findIndex((p) => p.id === activePageId);
+    const newIdx = dir === 'prev' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= pages.length) return;
+    setActivePageId(pages[newIdx].id);
+    setActiveBoxId(null);
+  };
+
+  const handleExportPDF = async () => {
+    if (!selectedSize) return;
+
+    const originalPageId = activePageId;
+    const originalBoxId = activeBoxId;
+
+    setIsExporting(true);
+    setActiveBoxId(null);
+
+    try {
+      const { toJpeg } = await import('html-to-image');
+      const { jsPDF } = await import('jspdf');
+
+      const pdf = new jsPDF({
+        orientation: selectedSize.canvasWidth > selectedSize.canvasHeight ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [selectedSize.canvasWidth, selectedSize.canvasHeight],
+        hotfixes: ['px_scaling'],
+      });
+
+      for (let i = 0; i < pages.length; i++) {
+        setActivePageId(pages[i].id);
+        await new Promise((r) => setTimeout(r, 800));
+
+        const canvasEl = document.getElementById('album-canvas');
+        if (!canvasEl) continue;
+
+        const imgData = await toJpeg(canvasEl as HTMLElement, {
+          pixelRatio: 2.5,
+          quality: 0.90,
+          backgroundColor: '#ffffff',
+        });
+
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, 0, selectedSize.canvasWidth, selectedSize.canvasHeight);
+      }
+
+      pdf.save('My_Album.pdf');
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      alert('PDF export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+      setActivePageId(originalPageId);
+      setActiveBoxId(originalBoxId);
     }
   };
 
@@ -209,6 +304,14 @@ export default function EditorPage() {
     <div className="h-screen flex flex-col bg-gray-50">
       <LoadingOverlay isVisible={isLoading} message={loadingMessage} />
 
+      {isExporting && (
+        <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          <p className="text-white text-lg font-semibold">Generating High-Quality PDF...</p>
+          <p className="text-white/70 text-sm">Please wait, do not close this tab</p>
+        </div>
+      )}
+
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -234,11 +337,21 @@ export default function EditorPage() {
               size="sm"
               leftIcon={<Move className="w-4 h-4" />}
               onClick={togglePanMode}
+              disabled={isExporting}
             >
               Move Tool: {isPanMode ? 'On' : 'Off'}
             </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Download className="w-4 h-4" />}
+              onClick={handleExportPDF}
+              disabled={isExporting}
+            >
+              Download PDF
+            </Button>
             <span className="text-sm text-gray-600">
-              {boxes.length} photo{boxes.length !== 1 ? 's' : ''} on canvas
+              Page {activePageIndex + 1} of {pages.length} &middot; {boxes.length} photo{boxes.length !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
@@ -254,17 +367,85 @@ export default function EditorPage() {
           isLoading={isLoading}
         />
 
-        <Canvas
-          albumSize={selectedSize}
-          boxes={boxes}
-          images={images}
-          activeBoxId={activeBoxId}
-          isPanMode={isPanMode}
-          onBoxUpdate={handleBoxUpdate}
-          onImageUpdate={handleImageUpdate} // ARTIK BAĞLI!
-          onBoxActivate={setActiveBoxId}
-          onBoxDelete={handleBoxDelete}
-        />
+        {/* Center column: canvas + bottom nav */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Canvas
+            albumSize={selectedSize}
+            boxes={boxes}
+            images={images}
+            activeBoxId={activeBoxId}
+            isPanMode={isPanMode}
+            isExporting={isExporting}
+            onBoxUpdate={handleBoxUpdate}
+            onImageUpdate={handleImageUpdate}
+            onBoxActivate={setActiveBoxId}
+            onBoxDelete={handleBoxDelete}
+          />
+
+          {/* Bottom Navigation Bar */}
+          <div className="bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
+            {/* Left: Prev / Next */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleNavigate('prev')}
+                disabled={activePageIndex === 0}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </button>
+              <button
+                onClick={() => handleNavigate('next')}
+                disabled={activePageIndex === pages.length - 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Center: Page dots + label */}
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center gap-1.5">
+                {pages.map((page, idx) => (
+                  <button
+                    key={page.id}
+                    onClick={() => { setActivePageId(page.id); setActiveBoxId(null); }}
+                    className={`w-2.5 h-2.5 rounded-full transition-all ${
+                      page.id === activePageId
+                        ? 'bg-blue-600 scale-125'
+                        : 'bg-gray-300 hover:bg-gray-400'
+                    }`}
+                    title={`Page ${idx + 1}`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-gray-500">
+                Page {activePageIndex + 1} / {pages.length}
+              </span>
+            </div>
+
+            {/* Right: Add + Delete */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAddPage}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Page
+              </button>
+              {pages.length > 1 && (
+                <button
+                  onClick={handleDeletePage}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         <RightPanel
           selectedBox={activeBox}

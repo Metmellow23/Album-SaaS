@@ -11,6 +11,7 @@ interface CanvasProps {
   images: ImageData[];
   activeBoxId: string | null;
   isPanMode: boolean;
+  isExporting?: boolean;
   onBoxUpdate: (boxId: string, updates: Partial<PhotoBoxType>) => void;
   onImageUpdate: (imageId: string, updates: Partial<ImageData>) => void; // EKLENDİ
   onBoxActivate: (boxId: string | null) => void;
@@ -23,6 +24,7 @@ const Canvas: React.FC<CanvasProps> = ({
   images,
   activeBoxId,
   isPanMode,
+  isExporting,
   onBoxUpdate,
   onImageUpdate, // EKLENDİ
   onBoxActivate,
@@ -95,6 +97,7 @@ const Canvas: React.FC<CanvasProps> = ({
       >
         <div
           ref={canvasRef}
+          id="album-canvas"
           className={cn(
             'relative bg-white shadow-2xl',
             'border-2 border-gray-800'
@@ -140,11 +143,15 @@ const Canvas: React.FC<CanvasProps> = ({
             );
           })}
 
-          <div
-            className="absolute inset-0 border-red-600/30 pointer-events-none z-[100]"
-            style={{ borderWidth: `${bleedSize}px` }}
-          />
-          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-blue-900/50 pointer-events-none z-[101]" />
+          {!isExporting && (
+            <div
+              className="absolute inset-0 border-red-600/30 pointer-events-none z-[100]"
+              style={{ borderWidth: `${bleedSize}px` }}
+            />
+          )}
+          {!isExporting && (
+            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-blue-900/50 pointer-events-none z-[101]" />
+          )}
         </div>
       </div>
     </div>
